@@ -1,0 +1,18 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "DefaultConnection": "Host=10.91.20.72;Port=5432;Database=voyage;Username=postgres;Password=postgres",
+    "Jwt:Issuer": "shipnet.no",
+    "Jwt:Audience": "shipnet2.0",
+    "Jwt:SecretKey": "58df34375e7a8df799815878a556da466f2e28502129b11aedb8488cd67b8376",
+    "Jwt:Expiry": "24" //In hours
+    //"DefaultConnection": "Server=10.87.5.46;Database=DemoDb;User Id=SYSADM;Password=SYSADM;TrustServerCertificate=True;"
+  },
+  "Host": {
+    "LocalHttpPort": 7071,
+    "CORS": "*"
+
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "login": {
+    "url": "http://10.87.5.235:3000/login",
+    "username": "amarnath",
+    "password": "amarnath",
+    "accountCode": "qa"
+  },
+  "company": {
+    "name": "amarnath" 
+  },
+  "vessel": {
+    "name": "Automation Playwright",
+    "code": "AUTO001",
+    "type": "Bulk Carrier",
+    "deadWeightTonnage": "50000",
+    "runningCost": "10000",
+    "imo": "1234567"
+  },
+  "grades": {
+    "primary": {
+      "grade": "HSFO",
+      "type": "Primary"
+    },
+    "secondary": {
+      "grade": "MDO",
+      "type": "Secondary"
+    }
+  },
+  "consumption": {
+    "port": {
+      "value1": "5.00",
+      "value2": "2.50"
+    },
+    "ballast": {
+      "speed": "12.0",
+      "value1": "15.00",
+      "value2": "7.50"
+    },
+    "laden": {
+      "speed": "12.0",
+      "value1": "20.00",
+      "value2": "10.00"
+    }
+  }
+}

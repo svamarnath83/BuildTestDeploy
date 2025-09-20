@@ -1,0 +1,65 @@
+@import "../../../packages/ui/src/globals.css";
+
+/* Custom styles for voyage event popups */
+.event-popup .mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+  min-width: 200px;
+}
+
+.event-popup .mapboxgl-popup-tip {
+  border-top-color: #f9fafb;
+}
+
+.event-popup .mapboxgl-popup-close-button {
+  font-size: 16px;
+  padding: 4px 8px;
+  color: #6b7280;
+}
+
+.event-popup .mapboxgl-popup-close-button:hover {
+  color: #374151;
+  background: #f3f4f6;
+}
+
+/* Custom styles for vessel status popups */
+.vessel-status-popup .mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  border: 1px solid #e5e7eb;
+  min-width: 250px;
+}
+
+.vessel-status-popup .mapboxgl-popup-tip {
+  border-top-color: #f9fafb;
+}
+
+.vessel-status-popup .mapboxgl-popup-close-button {
+  font-size: 16px;
+  padding: 4px 8px;
+  color: #6b7280;
+  top: 8px;
+  right: 8px;
+}
+
+.vessel-status-popup .mapboxgl-popup-close-button:hover {
+  color: #374151;
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+/* Custom styles for vessel info popups */
+.vessel-info-popup .mapboxgl-popup-content {
+  padding: 0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+  max-width: 400px !important;
+  background: transparent !important;
+}
+
+.vessel-info-popup .mapboxgl-popup-tip {
+  border-top-color: #2563eb !important;
+}

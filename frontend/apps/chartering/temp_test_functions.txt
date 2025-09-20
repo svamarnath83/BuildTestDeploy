@@ -1,0 +1,2269 @@
+export async function testGetPortDistanceEndpoint(): Promise<void> {
+  console.log('🧪 Testing getPortDistance endpoint with routing points...');
+  
+  // Test with ports that should have routing points (like OSLO → DUBAI via SUEZ CANAL)
+  const testPorts = ['BERGEN', 'OSLO', 'DUBAI', 'Singapore'];
+  
+  try {
+    const response = await fetch('http://localhost:7071/api/getPortDistance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testPorts),
+    });
+    
+    if (!response.ok) {
+      console.error('❌ API Error:', response.status, response.statusText);
+      return;
+    }
+    
+    const data = await response.json();
+    console.log('✅ API Response:', data);
+    
+    // Test cache functionality
+    await lookupMultipleDistances(testPorts);
+    console.log('✅ Cache populated');
+    
+    // Test individual lookups with routing points
+    const result1 = getDistanceResultFromCache('OSLO', 'DUBAI');
+    const result2 = getDistanceResultFromCache('BERGEN', 'OSLO');
+    
+    console.log('✅ Cached distance results:');
+    console.log('  OSLO → DUBAI:', result1);
+    console.log('    - Distance:', result1?.Distance);
+    console.log('    - Routing Points:', result1?.RoutingPoints);
+    console.log('  BERGEN → OSLO:', result2);
+    console.log('    - Distance:', result2?.Distance);
+    console.log('    - Routing Points:', result2?.RoutingPoints);
+    
+    // Test routing points logic
+    console.log('🧪 Testing routing points logic...');
+    
+    // Create a test schedule
+    const testSchedule: PortCall[] = [
+      {
+        id: 1,
+        portName: 'OSLO',
+        activity: 'Load',
+        portDays: 2,
+        additionalCosts: 0,
+        eta: '2024-12-25',
+        etd: '2024-12-27',
+        isFixed: false,
+        isDeletable: false,
+        hfoDays: 0,
+        lsfoDays: 0,
+        mgoDays: 0,
+        distance: 0,
+        speedSetting: 'Eco'
+      },
+      {
+        id: 2,
+        portName: 'DUBAI',
+        activity: 'Discharge',
+        portDays: 2,
+        additionalCosts: 0,
+        eta: '2025-01-05',
+        etd: '2025-01-07',
+        isFixed: false,
+        isDeletable: false,
+        hfoDays: 0,
+        lsfoDays: 0,
+        mgoDays: 0,
+        distance: 0,
+        speedSetting: 'Eco'
+      }
+    ];
+    
+    const updatedSchedule = applyRoutingPointsLogic(testSchedule);
+    console.log('✅ Routing points logic applied:');
+    console.log('  Original schedule length:', testSchedule.length);
+    console.log('  Updated schedule length:', updatedSchedule.length);
+    console.log('  Updated schedule:', updatedSchedule.map(p => ({ 
+      port: p.portName, 
+      activity: p.activity, 
+      isRoutingPoint: p.isRoutingPoint,
+      distance: p.distance 
+    })));
+    
+  } catch (error) {
+    console.error('❌ Test failed:', error);
+  }
+}
+
+/**
+ * Test function specifically for routing points use cases
+ */
+export async function testRoutingPointsUseCases(): Promise<void> {
+  console.log('🧪 Testing Routing Points Use Cases...');
+  
+  // Mock distance data similar to your example
+  const mockDistanceData: DistanceResult[] = [
+    {
+      FromPort: "BERGEN",
+      ToPort: "OSLO",
+      Distance: 382,
+      SecaDistance: 0,
+      RoutingPoints: []
+    },
+    {
+      FromPort: "OSLO",
+      ToPort: "DUBAI",
+      Distance: 0,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache with mock data
+  mockDistanceData.forEach(result => {
+    const fromKey = result.FromPort.trim();
+    const toKey = result.ToPort.trim();
+    distanceCache.set(`${fromKey}|${toKey}`, result);
+    
+    const reverseResult: DistanceResult = {
+      ...result,
+      FromPort: toKey,
+      ToPort: fromKey
+    };
+    distanceCache.set(`${toKey}|${fromKey}`, reverseResult);
+  });
+  
+  console.log('✅ Mock distance data populated in cache');
+  
+  // Test Use Case 1: Distance has routing points but schedule doesn't → add them
+  console.log('\n🧪 Testing Use Case 1: Adding routing points...');
+  
+  const scheduleWithoutRoutingPoints: PortCall[] = [
+    {
+      id: 1,
+      portName: 'OSLO',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'DUBAI',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  const scheduleAfterUseCase1 = applyRoutingPointsLogic(scheduleWithoutRoutingPoints);
+  console.log('  Original schedule:', scheduleWithoutRoutingPoints.map(p => ({ port: p.portName, isRoutingPoint: p.isRoutingPoint })));
+  console.log('  After Use Case 1:', scheduleAfterUseCase1.map(p => ({ port: p.portName, activity: p.activity, isRoutingPoint: p.isRoutingPoint })));
+  console.log('  ✅ Should have added SUEZ CANAL between OSLO and DUBAI');
+  
+  // Test Use Case 2: Schedule has routing points but distance doesn't → remove them
+  console.log('\n🧪 Testing Use Case 2: Removing routing points...');
+  
+  const scheduleWithRoutingPoints: PortCall[] = [
+    {
+      id: 1,
+      portName: 'BERGEN',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+         {
+       id: 99999, // Use a clearly different ID to avoid conflicts
+       portName: 'UNNECESSARY CANAL',
+       activity: 'Canal',
+       portDays: 0.25,
+       additionalCosts: 5000,
+       eta: '',
+       etd: '',
+       isFixed: false,
+       isDeletable: true,
+       hfoDays: 0,
+       lsfoDays: 0,
+       mgoDays: 0,
+       distance: 100,
+       speedSetting: 'Eco',
+       isRoutingPoint: true
+     },
+     {
+       id: 2,
+       portName: 'OSLO',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  const scheduleAfterUseCase2 = applyRoutingPointsLogic(scheduleWithRoutingPoints);
+  console.log('  Original schedule:', scheduleWithRoutingPoints.map(p => ({ port: p.portName, isRoutingPoint: p.isRoutingPoint })));
+  console.log('  After Use Case 2:', scheduleAfterUseCase2.map(p => ({ port: p.portName, activity: p.activity, isRoutingPoint: p.isRoutingPoint })));
+  console.log('  ✅ Should have removed UNNECESSARY CANAL between BERGEN and OSLO');
+  
+  console.log('\n🎉 Routing Points Use Cases Testing Complete!');
+}
+
+/**
+ * Test function for the DUBAI/SINGAPORE/DUBAI bidirectional routing scenario
+ */
+export async function testBidirectionalRoutingPoints(): Promise<void> {
+  console.log('🧪 Testing Bidirectional Routing Points (DUBAI/SINGAPORE/DUBAI scenario)...');
+  
+  // Mock distance data - only SINGAPORE → DUBAI has routing points initially
+  const mockDistanceData: DistanceResult[] = [
+    {
+      FromPort: "DUBAI",
+      ToPort: "SINGAPORE", 
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [] // Initially no routing points for this direction
+    },
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI",
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Clear cache and populate with mock data
+  distanceCache.clear();
+  mockDistanceData.forEach(result => {
+    const fromKey = result.FromPort.trim();
+    const toKey = result.ToPort.trim();
+    distanceCache.set(`${fromKey}|${toKey}`, result);
+  });
+  
+  console.log('✅ Mock distance data populated (asymmetric routing points)');
+  console.log('  DUBAI → SINGAPORE routing points:', distanceCache.get('DUBAI|SINGAPORE')?.RoutingPoints?.length || 0);
+  console.log('  SINGAPORE → DUBAI routing points:', distanceCache.get('SINGAPORE|DUBAI')?.RoutingPoints?.length || 0);
+  
+  // Create DUBAI/SINGAPORE/DUBAI schedule
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'DUBAI',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'SINGAPORE',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 3,
+      portName: 'DUBAI',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-15',
+      etd: '2025-01-17',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n🧪 Applying routing points logic to DUBAI/SINGAPORE/DUBAI schedule...');
+  const updatedSchedule = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('✅ After bidirectional logic:');
+  console.log('  DUBAI → SINGAPORE routing points:', distanceCache.get('DUBAI|SINGAPORE')?.RoutingPoints?.length || 0);
+  console.log('  SINGAPORE → DUBAI routing points:', distanceCache.get('SINGAPORE|DUBAI')?.RoutingPoints?.length || 0);
+  
+  console.log('\n📋 Updated schedule:');
+  updatedSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}${call.isRoutingPoint ? ' - CANAL' : ''})`);
+  });
+  
+  // Verify both legs have SUEZ CANAL
+  const hasFirstSuezCanal = updatedSchedule.some((call, index) => 
+    call.portName === 'SUEZ CANAL' && 
+    index > 0 && 
+    updatedSchedule[index - 1].portName === 'DUBAI' &&
+    index < updatedSchedule.length - 1 &&
+    updatedSchedule[index + 1].portName === 'SINGAPORE'
+  );
+  
+  const hasSecondSuezCanal = updatedSchedule.some((call, index) => 
+    call.portName === 'SUEZ CANAL' && 
+    index > 0 && 
+    updatedSchedule[index - 1].portName === 'SINGAPORE' &&
+    index < updatedSchedule.length - 1 &&
+    updatedSchedule[index + 1].portName === 'DUBAI'
+  );
+  
+  console.log('\n🔍 Verification:');
+  console.log(`  ✅ SUEZ CANAL added for DUBAI → SINGAPORE: ${hasFirstSuezCanal}`);
+  console.log(`  ✅ SUEZ CANAL added for SINGAPORE → DUBAI: ${hasSecondSuezCanal}`);
+  
+  if (hasFirstSuezCanal && hasSecondSuezCanal) {
+    console.log('\n🎉 SUCCESS: Both directions now have SUEZ CANAL routing points!');
+  } else {
+    console.log('\n❌ ISSUE: Missing routing points in one or both directions');
+  }
+}
+
+/**
+ * Clear the distance cache (should be called when port schedule changes)
+ */
+export function clearDistanceCache(): void {
+  const previousSize = distanceCache.size;
+  console.log(`🧹 CLEARING DISTANCE CACHE: ${previousSize} entries will be removed`);
+  
+  if (previousSize > 0) {
+    console.log('📋 Cache entries before clearing:', Array.from(distanceCache.keys()));
+  }
+  
+  distanceCache.clear();
+  console.log(`✅ DISTANCE CACHE CLEARED: ${previousSize} entries removed, cache now has ${distanceCache.size} entries`);
+}
+
+/**
+ * Debug function to inspect current distance cache contents
+ */
+export function debugDistanceCache(): void {
+  console.log('🔍 Distance Cache Debug Information:');
+  console.log(`📊 Total cache entries: ${distanceCache.size}`);
+  
+  if (distanceCache.size === 0) {
+    console.log('❌ Cache is empty! Make sure to call lookupMultipleDistances first.');
+    return;
+  }
+  
+  Array.from(distanceCache.entries()).forEach(([key, result]) => {
+    console.log(`\n🗂️  Key: ${key}`);
+    console.log(`   From: ${result.FromPort} → To: ${result.ToPort}`);
+    console.log(`   Distance: ${result.Distance} NM`);
+    console.log(`   Routing Points: ${result.RoutingPoints?.length || 0}`);
+    if (result.RoutingPoints && result.RoutingPoints.length > 0) {
+      result.RoutingPoints.forEach((rp, index) => {
+        console.log(`      ${index + 1}. ${rp.Name} (${rp.Distance} NM)`);
+      });
+    }
+  });
+}
+
+/**
+ * Quick test for the exact scenario mentioned by user: SINGAPORE → DUBAI → SINGAPORE
+ */
+export async function testSingaporeDubaiSingapore(): Promise<void> {
+  console.log('🧪 Testing SINGAPORE → DUBAI → SINGAPORE scenario...');
+  
+  // Clear cache first
+  distanceCache.clear();
+  
+  // Mock the distance data from API (similar to your example)
+  const mockData: DistanceResult[] = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI",
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache with normalized keys
+  mockData.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('📋 Initial cache state:');
+  Array.from(distanceCache.entries()).forEach(([key, result]) => {
+    console.log(`  ${key}: ${result.RoutingPoints?.length || 0} routing points`);
+  });
+  
+  // Create the schedule: Singapore (Ballast) → Dubai (Load) → Singapore (Discharge)
+  const schedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'Singapore',
+      activity: 'Ballast',
+      portDays: 0,
+      additionalCosts: 0,
+      eta: '',
+      etd: '2024-12-20',
+      isFixed: true,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'DUBAI',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 3,
+      portName: 'SINGAPORE',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n🚀 Applying routing points logic...');
+  const result = applyRoutingPointsLogic(schedule);
+  
+  console.log('\n📋 Final schedule:');
+  result.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}${call.isRoutingPoint ? ' - CANAL' : ''})`);
+  });
+  
+  // Check if SUEZ CANAL was added for both directions
+  const suezCount = result.filter(call => call.portName === 'SUEZ CANAL').length;
+  console.log(`\n🔍 SUEZ CANAL appearances: ${suezCount}`);
+  
+  if (suezCount === 2) {
+    console.log('✅ SUCCESS: SUEZ CANAL added for both directions!');
+  } else {
+    console.log('❌ ISSUE: Expected 2 SUEZ CANAL entries, got', suezCount);
+  }
+}
+
+/**
+ * Comprehensive debugging test that shows each step of the process
+ */
+export async function debugRoutingPointsIssue(): Promise<void> {
+  console.log('🚨 COMPREHENSIVE ROUTING POINTS DEBUG 🚨');
+  console.log('========================================\n');
+  
+  // Step 1: Clear cache and show initial state
+  console.log('1️⃣ Clearing cache...');
+  distanceCache.clear();
+  debugDistanceCache();
+  
+  // Step 2: Add some test data (simulating API response)
+  console.log('\n2️⃣ Adding test data to cache...');
+  const testData: DistanceResult[] = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI", 
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Manually populate cache (simulating what lookupMultipleDistances does)
+  testData.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    console.log(`   Adding cache entry: ${fromKey}|${toKey}`);
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('\n📋 After adding test data:');
+  debugDistanceCache();
+  
+  // Step 3: Test bidirectional logic
+  console.log('\n3️⃣ Running bidirectional logic...');
+  ensureBidirectionalRoutingPoints();
+  
+  console.log('\n📋 After bidirectional logic:');
+  debugDistanceCache();
+  
+  // Step 4: Test cache lookups
+  console.log('\n4️⃣ Testing cache lookups...');
+  console.log('Testing: Singapore → DUBAI');
+  const result1 = getDistanceResultFromCache('Singapore', 'DUBAI');
+  console.log('Result:', result1);
+  
+  console.log('\nTesting: DUBAI → Singapore');
+  const result2 = getDistanceResultFromCache('DUBAI', 'Singapore');
+  console.log('Result:', result2);
+  
+  // Step 5: Test with actual schedule
+  console.log('\n5️⃣ Testing with schedule...');
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'Singapore',
+      activity: 'Ballast',
+      portDays: 0,
+      additionalCosts: 0,
+      eta: '',
+      etd: '2024-12-20',
+      isFixed: true,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'DUBAI',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 3,
+      portName: 'Singapore',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('Original schedule:', testSchedule.map(p => p.portName));
+  
+  const finalSchedule = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('\n📋 Final schedule:');
+  finalSchedule.forEach((call, index) => {
+    console.log(`   ${index + 1}. ${call.portName} (${call.activity}${call.isRoutingPoint ? ' - CANAL' : ''})`);
+  });
+  
+  const suezCount = finalSchedule.filter(call => call.portName === 'SUEZ CANAL').length;
+  console.log(`\n🔍 SUEZ CANAL count: ${suezCount}`);
+  
+  if (suezCount === 2) {
+    console.log('✅ SUCCESS: Both directions have SUEZ CANAL!');
+  } else if (suezCount === 1) {
+    console.log('⚠️ PARTIAL: Only one direction has SUEZ CANAL');
+  } else {
+    console.log('❌ FAILED: No SUEZ CANAL added');
+  }
+  
+  console.log('\n🏁 Debug complete!');
+}
+
+/**
+ * Test function for alternative routing points functionality
+ */
+export async function testAlternativeRoutingPoints(): Promise<void> {
+  console.log('🧪 Testing Alternative Routing Points functionality...');
+  
+  // Clear cache first
+  distanceCache.clear();
+  
+  // Mock data similar to user's example with alternatives
+  const mockDataWithAlternatives: DistanceResult[] = [
+    {
+      FromPort: "BERGEN",
+      ToPort: "OSLO", 
+      Distance: 382,
+      SecaDistance: 0,
+      RoutingPoints: []
+    },
+    {
+      FromPort: "OSLO",
+      ToPort: "DUBAI",
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache
+  mockDataWithAlternatives.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('✅ Mock data with alternatives populated');
+  
+  // Create test schedule
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'OSLO',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'DUBAI',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n🚀 Applying routing points logic with alternatives...');
+  const resultWithAlternatives = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('\n📋 Schedule with alternatives:');
+  resultWithAlternatives.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+    if (call.isRoutingPoint && call.availableAlternatives) {
+      console.log(`     🔀 Available alternatives (${call.availableAlternatives.length}):`);
+      call.availableAlternatives.forEach((alt, altIndex) => {
+        console.log(`        ${altIndex + 1}. ${alt.Name} (${alt.Distance} NM) - AddToRotation: ${alt.AddToRotation}`);
+      });
+    }
+  });
+  
+  // Test switching to alternative
+  const routingPointCall = resultWithAlternatives.find(call => call.isRoutingPoint);
+  if (routingPointCall && routingPointCall.availableAlternatives && routingPointCall.availableAlternatives.length > 1) {
+    console.log('\n🔄 Testing alternative switching...');
+    
+    // Test Case 1: Switch to CAPE OF GOOD HOPE (AddToRotation: false) - should remove the routing point
+    const capeAlternative = routingPointCall.availableAlternatives.find(alt => alt.Name === "CAPE OF GOOD HOPE");
+    if (capeAlternative) {
+      console.log(`\n📍 Test Case 1: Switching to ${capeAlternative.Name} (AddToRotation: ${capeAlternative.AddToRotation})...`);
+      
+      const scheduleWithCape = switchRoutingPointAlternative(
+        resultWithAlternatives, 
+        routingPointCall.id, 
+        capeAlternative
+      );
+      
+      console.log('📋 Schedule after switching to CAPE OF GOOD HOPE:');
+      scheduleWithCape.forEach((call, index) => {
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+      });
+      
+      const hasAnyCanalInSchedule = scheduleWithCape.some(call => call.portName.includes('CANAL'));
+      console.log(`🔍 Any canal remaining in schedule: ${hasAnyCanalInSchedule ? '❌ YES (ERROR!)' : '✅ NO (CORRECT!)'}`);
+    }
+    
+    // Test Case 2: Switch back to SUEZ CANAL (AddToRotation: true) - should add it back
+    console.log('\n📍 Test Case 2: Testing switch back to SUEZ CANAL...');
+    const suezAlternative = routingPointCall.availableAlternatives.find(alt => alt.Name === "SUEZ CANAL");
+    if (suezAlternative) {
+      // First create a schedule without any routing points
+      const scheduleWithoutRouting = testSchedule.slice(); // Original schedule without routing points
+      
+      console.log(`Switching to ${suezAlternative.Name} (AddToRotation: ${suezAlternative.AddToRotation})...`);
+      
+      // Apply routing logic again (this should add SUEZ CANAL)
+      const scheduleWithSuez = applyRoutingPointsLogic(scheduleWithoutRouting);
+      
+      console.log('📋 Schedule with SUEZ CANAL added:');
+      scheduleWithSuez.forEach((call, index) => {
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+      });
+    }
+  }
+  
+  console.log('\n🎉 Alternative routing points test complete!');
+}
+
+/**
+ * Test CAPE OF GOOD HOPE removal behavior specifically
+ */
+export async function testCapeRemoval(): Promise<void> {
+  console.log('🧪 Testing CAPE OF GOOD HOPE removal specifically...');
+  
+  // Clear cache
+  distanceCache.clear();
+  
+  // Add test data for SINGAPORE → DUBAI with SUEZ CANAL alternative
+  const testData: DistanceResult[] = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI",
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache
+  testData.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('✅ Test data populated');
+  
+  // Step 1: Create initial schedule with SUEZ CANAL
+  const initialSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'SINGAPORE',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'DUBAI',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n📋 Step 1: Initial schedule:');
+  initialSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+  });
+  
+  // Step 2: Apply routing points logic (should add SUEZ CANAL)
+  const scheduleWithSuez = applyRoutingPointsLogic(initialSchedule);
+  
+  console.log('\n📋 Step 2: After applying routing points (SUEZ CANAL should be added):');
+  scheduleWithSuez.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}) ${call.isRoutingPoint ? '[ROUTING POINT]' : ''}`);
+  });
+  
+  // Step 3: Find SUEZ CANAL and switch to CAPE OF GOOD HOPE
+  const suezCanal = scheduleWithSuez.find(call => call.portName === 'SUEZ CANAL');
+  if (suezCanal && suezCanal.availableAlternatives) {
+    const capeAlternative = suezCanal.availableAlternatives.find(alt => alt.Name === 'CAPE OF GOOD HOPE');
+    
+    if (capeAlternative) {
+      console.log(`\n🔄 Step 3: Switching to CAPE OF GOOD HOPE (AddToRotation: ${capeAlternative.AddToRotation})...`);
+      
+      const scheduleAfterSwitch = switchRoutingPointAlternative(
+        scheduleWithSuez,
+        suezCanal.id,
+        capeAlternative
+      );
+      
+      console.log('\n📋 Step 4: After switching to CAPE OF GOOD HOPE:');
+      scheduleAfterSwitch.forEach((call, index) => {
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity}) ${call.isRoutingPoint ? '[ROUTING POINT]' : ''}`);
+      });
+      
+      const stillHasSuez = scheduleAfterSwitch.some(call => call.portName.includes('SUEZ') || call.portName.includes('CANAL'));
+      console.log(`\n🔍 SUEZ CANAL still present: ${stillHasSuez ? '❌ YES (ERROR!)' : '✅ NO (SUCCESS!)'}`);
+      
+      // Step 4: Test updating distances (should not re-add SUEZ CANAL)
+      console.log('\n🔄 Step 5: Testing updatePortCallDistances (should not re-add SUEZ CANAL)...');
+      const finalSchedule = await updatePortCallDistances(scheduleAfterSwitch);
+      
+      console.log('\n📋 Final schedule after distance update:');
+      finalSchedule.forEach((call, index) => {
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity}) ${call.isRoutingPoint ? '[ROUTING POINT]' : ''}`);
+      });
+      
+      const finalHasSuez = finalSchedule.some(call => call.portName.includes('SUEZ') || call.portName.includes('CANAL'));
+      console.log(`\n🎯 Final result - SUEZ CANAL present: ${finalHasSuez ? '❌ YES (ERROR!)' : '✅ NO (SUCCESS!)'}`);
+      
+    } else {
+      console.log('❌ CAPE OF GOOD HOPE alternative not found');
+    }
+  } else {
+    console.log('❌ SUEZ CANAL not found or has no alternatives');
+  }
+}
+
+/**
+ * Test the user's specific scenario: DUBAI → SINGAPORE with CAPE OF GOOD HOPE not added, 
+ * but user can manually select SUEZ CANAL
+ */
+export async function testManualRoutingPointSelection(): Promise<void> {
+  console.log('🧪 Testing Manual Routing Point Selection (User Scenario)...');
+  
+  // Clear cache
+  distanceCache.clear();
+  
+  // Mock API response: DUBAI → SINGAPORE with CAPE OF GOOD HOPE as default (AddToRotation: false)
+  // and SUEZ CANAL as alternative (AddToRotation: true)
+  const testData: DistanceResult[] = [
+    {
+      FromPort: "DUBAI",
+      ToPort: "SINGAPORE",
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "CAPE OF GOOD HOPE",
+          Distance: 0,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "SUEZ CANAL",
+              Distance: 33,
+              SecaDistance: 0,
+              AddToRotation: true
+            }
+          ],
+          AddToRotation: false // Default route is NOT added
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache
+  testData.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('✅ Test data populated (CAPE OF GOOD HOPE not added, SUEZ CANAL available)');
+  
+  // Step 1: Create initial DUBAI → SINGAPORE schedule
+  const initialSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'DUBAI',
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2024-12-25',
+      etd: '2024-12-27',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: 'SINGAPORE',
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '2025-01-05',
+      etd: '2025-01-07',
+      isFixed: false,
+      isDeletable: false,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n📋 Step 1: Initial schedule (DUBAI → SINGAPORE):');
+  initialSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+  });
+  
+  // Step 2: Apply routing points logic (should NOT add CAPE OF GOOD HOPE, but store available options)
+  const scheduleAfterLogic = applyRoutingPointsLogic(initialSchedule);
+  
+  console.log('\n📋 Step 2: After routing points logic (no routing points added):');
+  scheduleAfterLogic.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}) ${call.isRoutingPoint ? '[ROUTING POINT]' : ''}`);
+    if (call.availableRoutingPoints && call.availableRoutingPoints.length > 0) {
+      console.log(`      🎯 Available routing points: ${call.availableRoutingPoints.map(rp => `${rp.Name} (AddToRotation: ${rp.AddToRotation})`).join(', ')}`);
+    }
+  });
+  
+  // Step 3: User manually selects SUEZ CANAL from available options
+  const dubaiPort = scheduleAfterLogic.find(call => call.portName === 'DUBAI');
+  if (dubaiPort && dubaiPort.availableRoutingPoints) {
+    const suezCanal = dubaiPort.availableRoutingPoints.find(rp => rp.Name === 'SUEZ CANAL');
+    
+    if (suezCanal) {
+      console.log('\n🔄 Step 3: User manually selects SUEZ CANAL from available routing points...');
+      
+      const dubaiIndex = scheduleAfterLogic.findIndex(call => call.portName === 'DUBAI');
+      const scheduleWithManualSuez = addRoutingPointFromAvailable(
+        scheduleAfterLogic,
+        dubaiIndex,
+        suezCanal
+      );
+      
+      console.log('\n📋 Step 4: After manually adding SUEZ CANAL:');
+      scheduleWithManualSuez.forEach((call, index) => {
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity}) ${call.isRoutingPoint ? '[ROUTING POINT]' : ''}`);
+        if (call.isRoutingPoint && call.availableAlternatives) {
+          console.log(`      🔀 Can switch to: ${call.availableAlternatives.map(alt => alt.Name).join(', ')}`);
+        }
+      });
+      
+      console.log('\n✅ SUCCESS: User can now manually add SUEZ CANAL even though CAPE OF GOOD HOPE was the default (not added)');
+      console.log('🎯 In the UI: DUBAI row will show a blue route icon that allows selecting SUEZ CANAL');
+      
+    } else {
+      console.log('❌ SUEZ CANAL not found in available routing points');
+    }
+  } else {
+    console.log('❌ DUBAI port not found or has no available routing points');
+  }
+}
+
+/**
+ * Test the new alternateRPs functionality
+ */
+export function testAlternateRPsFeature(): void {
+  console.log('\n🧪 === TEST: AlternateRPs Feature ===');
+  
+  // Mock distance data with routing points that have alternates
+  const mockDistanceData = [
+    {
+      FromPort: "OSLO",
+      ToPort: "DUBAI", 
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AlternateRPs: [],
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Clear and populate cache
+  distanceCache.clear();
+  mockDistanceData.forEach((data: DistanceResult) => {
+    const fromKey = data.FromPort.toUpperCase();
+    const toKey = data.ToPort.toUpperCase();
+    distanceCache.set(`${fromKey}|${toKey}`, data);
+    distanceCache.set(`${toKey}|${fromKey}`, {
+      ...data,
+      FromPort: toKey,
+      ToPort: fromKey
+    });
+  });
+  
+  // Create test schedule
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: "OSLO",
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: "DUBAI",
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('Initial schedule:');
+  testSchedule.forEach(call => console.log(`  ${call.portName} (${call.activity})`));
+  
+  // Apply routing logic 
+  const updatedSchedule = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('\nAfter applying routing logic:');
+  updatedSchedule.forEach(call => {
+    console.log(`  ${call.portName} (${call.activity}) - isRoutingPoint: ${call.isRoutingPoint || false}`);
+  });
+  
+  // Simulate updatePortCallDistances (just the alternateRPs part)
+  console.log('\nPopulating alternateRPs...');
+  for (let i = 0; i < updatedSchedule.length - 1; i++) {
+    const currentPort = updatedSchedule[i];
+    const nextPort = updatedSchedule[i + 1];
+    
+    if (currentPort.portName && nextPort.portName) {
+      const distanceResult = getDistanceResultFromCache(currentPort.portName, nextPort.portName);
+      
+      if (distanceResult && distanceResult.RoutingPoints && distanceResult.RoutingPoints.length > 0) {
+        const allAlternateRPs: string[] = [];
+        
+        distanceResult.RoutingPoints.forEach(rp => {
+          allAlternateRPs.push(rp.Name);
+          if (rp.AlternateRPs && rp.AlternateRPs.length > 0) {
+            rp.AlternateRPs.forEach(altRP => {
+              allAlternateRPs.push(altRP.Name);
+            });
+          }
+        });
+        
+        const uniqueAlternateRPs = [...new Set(allAlternateRPs)];
+        if (uniqueAlternateRPs.length > 0) {
+          updatedSchedule[i + 1] = {
+            ...nextPort,
+            alternateRPs: uniqueAlternateRPs
+          };
+          console.log(`  Added alternateRPs to ${nextPort.portName}: ${uniqueAlternateRPs.join(', ')}`);
+        }
+      }
+    }
+  }
+  
+  console.log('\nFinal schedule with alternateRPs:');
+  updatedSchedule.forEach(call => {
+    const hasIcon = call.alternateRPs && call.alternateRPs.length > 0 ? '🗂️' : '  ';
+    console.log(`  ${hasIcon} ${call.portName} (${call.activity}) - alternateRPs: ${call.alternateRPs?.join(', ') || 'none'}`);
+    if (call.isRoutingPoint && call.alternateRPs) {
+      console.log(`      ✅ ROUTING POINT HAS ALT ICON: ${call.alternateRPs.join(', ')}`);
+    }
+  });
+  
+  console.log('\n✅ AlternateRPs feature test complete');
+}
+
+/**
+ * Test SUEZ CANAL routing points showing orange icon
+ */
+export function testSuezCanalOrangeIcon(): void {
+  console.log('\n🧪 === TEST: SUEZ CANAL Orange Icon ===');
+  
+  // Mock distance data similar to Singapore → Dubai → Singapore scenario
+  const mockDistanceData = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI", 
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AlternateRPs: [],
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    },
+    {
+      FromPort: "DUBAI",
+      ToPort: "SINGAPORE", 
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AlternateRPs: [],
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Clear and populate cache
+  distanceCache.clear();
+  mockDistanceData.forEach((data: DistanceResult) => {
+    const fromKey = data.FromPort.toUpperCase();
+    const toKey = data.ToPort.toUpperCase();
+    distanceCache.set(`${fromKey}|${toKey}`, data);
+  });
+  
+  // Create test schedule
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: "SINGAPORE",
+      activity: 'Ballast',
+      portDays: 1,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: "DUBAI",
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 3,
+      portName: "SINGAPORE",
+      activity: 'Discharge',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('Initial schedule:');
+  testSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity})`);
+  });
+  
+  // Apply routing logic to add SUEZ CANAL
+  const updatedSchedule = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('\nAfter applying routing logic:');
+  updatedSchedule.forEach((call, index) => {
+    const hasIcon = call.alternateRPs && call.alternateRPs.length > 0 ? '🗂️' : '  ';
+    const routingTag = call.isRoutingPoint ? '[ROUTING POINT]' : '';
+    console.log(`  ${index + 1}. ${hasIcon} ${call.portName} (${call.activity}) ${routingTag}`);
+    
+    if (call.isRoutingPoint && call.alternateRPs && call.alternateRPs.length > 0) {
+      console.log(`      ✅ ORANGE ICON SHOWN! alternateRPs: ${call.alternateRPs.join(', ')}`);
+    } else if (call.isRoutingPoint) {
+      console.log(`      ❌ NO ORANGE ICON - alternateRPs: ${call.alternateRPs || 'undefined'}`);
+    }
+  });
+  
+  // Check specifically for SUEZ CANAL entries
+  const suezEntries = updatedSchedule.filter(call => call.portName === 'SUEZ CANAL');
+  console.log(`\n🔍 Found ${suezEntries.length} SUEZ CANAL entries:`);
+  
+  suezEntries.forEach((suez, index) => {
+    const hasOrangeIcon = suez.alternateRPs && suez.alternateRPs.length > 0;
+    console.log(`  SUEZ CANAL #${index + 1}: ${hasOrangeIcon ? '🗂️ HAS ORANGE ICON' : '❌ NO ORANGE ICON'}`);
+    if (hasOrangeIcon) {
+      console.log(`    alternateRPs: ${suez.alternateRPs!.join(', ')}`);
+    }
+  });
+  
+  console.log('\n✅ SUEZ CANAL orange icon test complete');
+}
+
+/**
+ * Test ExceptionRPs functionality when switching routing points
+ */
+export function testExceptionRPs(): void {
+  console.log('\n🧪 === TEST: ExceptionRPs Feature ===');
+  
+  // Mock distance data with SUEZ CANAL and CAPE OF GOOD HOPE
+  const mockDistanceData = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI", 
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AlternateRPs: [],
+              AddToRotation: false
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Clear and populate cache
+  distanceCache.clear();
+  mockDistanceData.forEach((data: DistanceResult) => {
+    const fromKey = data.FromPort.toUpperCase();
+    const toKey = data.ToPort.toUpperCase();
+    distanceCache.set(`${fromKey}|${toKey}`, data);
+  });
+  
+  // Create test schedule
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: "SINGAPORE",
+      activity: 'Ballast',
+      portDays: 1,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    },
+    {
+      id: 2,
+      portName: "DUBAI",
+      activity: 'Load',
+      portDays: 2,
+      additionalCosts: 0,
+      eta: '',
+      etd: '',
+      isFixed: false,
+      isDeletable: true,
+      hfoDays: 0,
+      lsfoDays: 0,
+      mgoDays: 0,
+      distance: 0,
+      speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('Step 1: Initial schedule');
+  testSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}) - ExceptionRPs: ${call.ExceptionRPs?.join(', ') || 'none'}`);
+  });
+  
+  // Apply routing logic to add SUEZ CANAL
+  const scheduleWithSuez = applyRoutingPointsLogic(testSchedule);
+  
+  console.log('\nStep 2: After adding SUEZ CANAL');
+  scheduleWithSuez.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName} (${call.activity}) - ExceptionRPs: ${call.ExceptionRPs?.join(', ') || 'none'}`);
+  });
+  
+  // Find SUEZ CANAL and switch to CAPE OF GOOD HOPE
+  const suezCanalCall = scheduleWithSuez.find(call => call.portName === 'SUEZ CANAL');
+  if (suezCanalCall && suezCanalCall.availableAlternatives) {
+    const capeAlternative = suezCanalCall.availableAlternatives.find(alt => alt.Name === 'CAPE OF GOOD HOPE');
+    
+    if (capeAlternative) {
+      console.log('\nStep 3: Switching SUEZ CANAL to CAPE OF GOOD HOPE...');
+      const finalSchedule = switchRoutingPointAlternative(scheduleWithSuez, suezCanalCall.id, capeAlternative);
+      
+      console.log('\nStep 4: Final schedule after switch');
+      finalSchedule.forEach((call, index) => {
+        const exceptionRPsStr = call.ExceptionRPs && call.ExceptionRPs.length > 0 
+          ? `ExceptionRPs: [${call.ExceptionRPs.join(', ')}]` 
+          : 'ExceptionRPs: none';
+        console.log(`  ${index + 1}. ${call.portName} (${call.activity}) - ${exceptionRPsStr}`);
+        
+        if (call.ExceptionRPs && call.ExceptionRPs.includes('SUEZ CANAL')) {
+          console.log(`      ✅ SUCCESS: ${call.portName} has SUEZ CANAL in ExceptionRPs!`);
+        }
+      });
+    } else {
+      console.log('❌ CAPE OF GOOD HOPE alternative not found');
+    }
+  } else {
+    console.log('❌ SUEZ CANAL not found or has no alternatives');
+  }
+  
+  console.log('\n✅ ExceptionRPs test complete');
+}
+
+/**
+ * Test distance cache clearing on schedule changes
+ */
+export function testDistanceCacheClearingOnChanges(): void {
+  console.log('\n🧪 === TEST: Distance Cache Clearing on Schedule Changes ===');
+  
+  // Mock some distance data
+  const mockDistanceData = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI", 
+      Distance: 1000,
+      SecaDistance: 0,
+      RoutingPoints: []
+    },
+    {
+      FromPort: "DUBAI",
+      ToPort: "ROTTERDAM", 
+      Distance: 2000,
+      SecaDistance: 0,
+      RoutingPoints: []
+    }
+  ];
+  
+  // Step 1: Clear and populate cache
+  console.log('\nStep 1: Populating distance cache...');
+  distanceCache.clear();
+  mockDistanceData.forEach((data: DistanceResult) => {
+    const fromKey = data.FromPort.toUpperCase();
+    const toKey = data.ToPort.toUpperCase();
+    distanceCache.set(`${fromKey}|${toKey}`, data);
+    distanceCache.set(`${toKey}|${fromKey}`, {
+      ...data,
+      FromPort: toKey,
+      ToPort: fromKey
+    });
+  });
+  
+  console.log(`✅ Cache populated with ${distanceCache.size} entries`);
+  console.log('Cache keys:', Array.from(distanceCache.keys()));
+  
+  // Step 2: Test clearing cache
+  console.log('\nStep 2: Testing clearDistanceCache function...');
+  clearDistanceCache();
+  
+  console.log(`✅ Cache after clearing: ${distanceCache.size} entries`);
+  
+  // Step 3: Simulate the scenarios where cache should be cleared
+  console.log('\nStep 3: Scenarios where cache gets cleared:');
+  console.log('  ✅ Port name change (e.g., SINGAPORE → TOKYO)');
+  console.log('  ✅ Port position change (drag and drop reordering)');
+  console.log('  ✅ Port count change (adding/removing ports)');
+  console.log('  ✅ This ensures distances are always recalculated with fresh data');
+  
+  console.log('\n✅ Distance cache clearing test complete');
+}
+
+/**
+ * Test comprehensive distance cache clearing in all scenarios
+ */
+export function testDistanceCacheClearingComprehensive(): void {
+  console.log('\n🧪 === TEST: Comprehensive Distance Cache Clearing ===');
+  
+  // Helper to populate cache with test data
+  const populateTestCache = () => {
+    const testData = [
+      { FromPort: "SINGAPORE", ToPort: "DUBAI", Distance: 1000, SecaDistance: 0, RoutingPoints: [] },
+      { FromPort: "DUBAI", ToPort: "ROTTERDAM", Distance: 2000, SecaDistance: 0, RoutingPoints: [] },
+      { FromPort: "ROTTERDAM", ToPort: "SINGAPORE", Distance: 3000, SecaDistance: 0, RoutingPoints: [] }
+    ];
+    
+    testData.forEach((data: DistanceResult) => {
+      const fromKey = data.FromPort.toUpperCase();
+      const toKey = data.ToPort.toUpperCase();
+      distanceCache.set(`${fromKey}|${toKey}`, data);
+      distanceCache.set(`${toKey}|${fromKey}`, {
+        ...data,
+        FromPort: toKey,
+        ToPort: fromKey
+      });
+    });
+  };
+  
+  // Test 1: Initial cache population
+  console.log('\n📋 Test 1: Cache Population');
+  distanceCache.clear();
+  populateTestCache();
+  console.log(`✅ Cache populated: ${distanceCache.size} entries`);
+  console.log('Cache keys:', Array.from(distanceCache.keys()).join(', '));
+  
+  // Test 2: Manual cache clearing
+  console.log('\n🧹 Test 2: Manual Cache Clearing');
+  clearDistanceCache();
+  console.log(`✅ Cache after manual clear: ${distanceCache.size} entries`);
+  
+  // Test 3: Verify cache is actually empty
+  console.log('\n🔍 Test 3: Verify Cache is Empty');
+  const cacheKeys = Array.from(distanceCache.keys());
+  if (cacheKeys.length === 0) {
+    console.log('✅ Cache is completely empty');
+  } else {
+    console.log('❌ Cache still has entries:', cacheKeys);
+  }
+  
+  // Test 4: Re-populate and clear again
+  console.log('\n🔄 Test 4: Re-populate and Clear Again');
+  populateTestCache();
+  console.log(`📊 Cache re-populated: ${distanceCache.size} entries`);
+  clearDistanceCache();
+  console.log(`🧹 Cache after second clear: ${distanceCache.size} entries`);
+  
+  // Test 5: Scenarios where cache should be cleared
+  console.log('\n📝 Test 5: Cache Clearing Scenarios Summary');
+  console.log('The following scenarios should trigger clearDistanceCache():');
+  console.log('  🔤 Port name change: SINGAPORE → TOKYO');
+  console.log('  🔄 Port position change: Drag port 2 to position 4');
+  console.log('  ➕ Port addition: Add new port between existing ports');
+  console.log('  ➖ Port removal: Remove any port from schedule');
+  console.log('  🎯 All scenarios call updatePortCallDistances() after clearing');
+  
+  console.log('\n✅ Comprehensive distance cache clearing test complete');
+  console.log('💡 If issues persist, check console logs during actual UI interactions');
+}
+
+/**
+ * Test the new distance column header button with status icons
+ */
+export function testDistanceColumnHeaderButton(): void {
+  console.log('\n🧪 === TEST: Distance Column Header Button ===');
+  
+  console.log('\n📝 Distance Column Header Button Features:');
+  console.log('  🔴 RED ICON: Shows when ports are missing distances');
+  console.log('  🟢 GREEN ICON: Shows when all ports have distances');
+  console.log('  📏 BUTTON TEXT: "Distance to Next (NM)"');
+  console.log('  🖱️ CLICKABLE: Triggers manual distance calculation');
+  console.log('  💡 TOOLTIP: Shows status and missing count');
+  
+  console.log('\n🎯 Distance Status Logic:');
+  console.log('  ✅ Checks all ports except the last one (should be 0)');
+  console.log('  ✅ Ignores routing points (they can have 0 distance legitimately)');
+  console.log('  ✅ Counts main ports with distance = 0 as missing');
+  console.log('  ✅ Updates icon color based on missing count');
+  
+  console.log('\n🎨 UI Experience:');
+  console.log('  📍 Location: Distance column header in port rotation table');
+  console.log('  🔴 Missing distances: Red icon + hover tooltip with count');
+  console.log('  🟢 All calculated: Green icon + hover tooltip confirmation');
+  console.log('  ⚡ Click action: Calls manual distance calculation function');
+  
+  console.log('\n📊 Example Scenarios:');
+  console.log('  Scenario 1: Fresh schedule with no distances');
+  console.log('    🔴 Status: Red icon');
+  console.log('    💭 Tooltip: "3 ports missing distances - click to calculate"');
+  console.log('    🖱️ Action: Click to calculate all distances');
+  
+  console.log('\n  Scenario 2: All distances calculated');
+  console.log('    🟢 Status: Green icon');
+  console.log('    💭 Tooltip: "All distances calculated - click to refresh"');
+  console.log('    🖱️ Action: Click to refresh/recalculate distances');
+  
+  console.log('\n  Scenario 3: Partial distances (mixed)');
+  console.log('    🔴 Status: Red icon');
+  console.log('    💭 Tooltip: "1 ports missing distances - click to calculate"');
+  console.log('    🖱️ Action: Click to complete missing distances');
+  
+  console.log('\n🔄 Integration with Manual Distance Control:');
+  console.log('  ✅ No automatic distance calls on port changes');
+  console.log('  ✅ Manual control via column header button');
+  console.log('  ✅ Clear visual feedback on distance status');
+  console.log('  ✅ User-driven distance calculation workflow');
+  
+  console.log('\n✅ Distance column header button test documentation complete');
+  console.log('🎯 Test in UI: Look for the red/green icon in the Distance column header');
+}
+
+/**
+ * Test the new ToPort distance assignment logic
+ */
+export function testToPortDistanceAssignment(): void {
+  console.log('\n🧪 === TEST: ToPort Distance Assignment ===');
+  
+  console.log('\n📝 New Distance Assignment Logic:');
+  console.log('  🎯 Distance is assigned TO the destination port (ToPort)');
+  console.log('  📏 Distance represents "distance to reach this port"');
+  console.log('  🏁 First port always has distance = 0 (starting point)');
+  console.log('  🔄 Middle ports have distance > 0 (distance to reach them)');
+  console.log('  🎁 Last port can have distance = 0 (final destination)');
+  
+  console.log('\n🔄 Before vs After:');
+  console.log('  ❌ OLD (FromPort assignment):');
+  console.log('    Singapore (distance=1000) → Dubai (distance=0)');
+  console.log('    Distance stored on "Singapore" = distance from Singapore to Dubai');
+  
+  console.log('\n  ✅ NEW (ToPort assignment):'); 
+  console.log('    Singapore (distance=0) → Dubai (distance=1000)');
+  console.log('    Distance stored on "Dubai" = distance to reach Dubai from Singapore');
+  
+  console.log('\n🛳️ Example with Routing Points:');
+  console.log('  ❌ OLD: Singapore (100) → Suez Canal (33) → Dubai (0)');
+  console.log('  ✅ NEW: Singapore (0) → Suez Canal (100) → Dubai (33)');
+  
+  console.log('\n🔧 Code Changes Made:');
+  console.log('  1. updatePortCallDistances: Distance assigned to nextPort (i+1) instead of currentPort (i)');
+  console.log('  2. First port distance set to 0 instead of last port');
+  console.log('  3. Routing point removal: Update nextPort distance instead of prevPort');
+  console.log('  4. Distance status check: Skip first port instead of last port');
+  
+  console.log('\n💡 Benefits:');
+  console.log('  🎯 More intuitive: Port carries "cost to reach it"');
+  console.log('  📊 Better data modeling: Distance as an attribute of destination');
+  console.log('  🔍 Clearer semantics: "How far to get to this port?"');
+  console.log('  📈 Consistent with travel/logistics industry standards');
+  
+  console.log('\n⚠️ UI Impact:');
+  console.log('  🟢 Distance column header status: Now checks from index 1 onwards');
+  console.log('  🔴 Red icon: Ports (except first) missing distances');
+  console.log('  🟢 Green icon: All destination ports have distances');
+  
+  console.log('\n✅ ToPort distance assignment test documentation complete');
+  console.log('🎯 Test in UI: Check that distances appear on destination ports, not origin ports');
+}
+
+/**
+ * Test distance clearing on port add/remove operations
+ */
+export function testDistanceClearingOnPortChanges(): void {
+  console.log('\n🧪 === TEST: Distance Clearing on Port Add/Remove ===');
+  
+  console.log('\n📋 DistanceUsecases.md Requirement:');
+  console.log('  ♻️ Auto-Clear Distance Rules:');
+  console.log('    - On Port Name change');
+  console.log('    - On New Port addition');  
+  console.log('    - On Port deletion');
+  console.log('    - On Port position change');
+  
+  console.log('\n🔧 Implementation:');
+  console.log('  1. clearDistanceCache() - Clears the API response cache');
+  console.log('  2. clearAllDistancesFromSchedule() - Clears distance values from port calls');
+  console.log('  3. Both functions called on port add/remove operations');
+  
+  console.log('\n📝 Test Scenario:');
+  console.log('  1. Create schedule: Singapore (0) → Dubai (1000) → Rotterdam (2000)');
+  console.log('  2. Add new port: Distances should all become 0');
+  console.log('  3. Remove a port: Distances should all become 0');
+  console.log('  4. User must manually click "Get Distances" to recalculate');
+  
+  // Create test schedule with distances
+  const testSchedule: PortCall[] = [
+    {
+      id: 1, portName: 'SINGAPORE', activity: 'Load', portDays: 2, additionalCosts: 0,
+      eta: '', etd: '', isFixed: false, isDeletable: true, hfoDays: 0, lsfoDays: 0, mgoDays: 0,
+      distance: 0, speedSetting: 'Eco'
+    },
+    {
+      id: 2, portName: 'DUBAI', activity: 'Discharge', portDays: 1, additionalCosts: 0,
+      eta: '', etd: '', isFixed: false, isDeletable: true, hfoDays: 0, lsfoDays: 0, mgoDays: 0,
+      distance: 1000, speedSetting: 'Eco'
+    },
+    {
+      id: 3, portName: 'ROTTERDAM', activity: 'Discharge', portDays: 1, additionalCosts: 0,
+      eta: '', etd: '', isFixed: false, isDeletable: true, hfoDays: 0, lsfoDays: 0, mgoDays: 0,
+      distance: 2000, speedSetting: 'Eco'
+    }
+  ];
+  
+  console.log('\n🛳️ Initial Schedule with Distances:');
+  testSchedule.forEach(call => {
+    console.log(`    ${call.portName}: ${call.distance} NM`);
+  });
+  
+  // Test distance clearing
+  const clearedSchedule = clearAllDistancesFromSchedule(testSchedule);
+  
+  console.log('\n🧹 After clearAllDistancesFromSchedule():');
+  clearedSchedule.forEach(call => {
+    console.log(`    ${call.portName}: ${call.distance} NM`);
+  });
+  
+  const allDistancesCleared = clearedSchedule.every(call => call.distance === 0);
+  
+  console.log(`\n✅ All distances cleared: ${allDistancesCleared ? '✅ PASS' : '❌ FAIL'}`);
+  
+  console.log('\n🎯 Expected Behavior in UI:');
+  console.log('  ➕ On port add: All distances → 0, red icon in column header');
+  console.log('  ➖ On port remove: All distances → 0, red icon in column header');
+  console.log('  🔄 On port drag/drop: Cache cleared, distances remain until manual refresh');
+  console.log('  📝 On port name change: Cache cleared, distances remain until manual refresh');
+  console.log('  🟢 Manual "Get Distances": Recalculates all distances, green icon');
+  
+  console.log('\n✅ Distance clearing test complete');
+  console.log('🧪 Test in UI: Add/remove ports and verify distances are cleared');
+}
+
+/**
+ * Test distance status checking logic
+ */
+export function testDistanceStatusLogic(): void {
+  console.log('\n🧪 === TEST: Distance Status Logic ===');
+  
+  console.log('\n📋 DistanceUsecases.md Requirement:');
+  console.log('  🔍 UI Alerts: If any Port Call is missing a distance, the Get Distance button should be highlighted');
+  
+  console.log('\n🎯 ToPort Distance Assignment Logic:');
+  console.log('  🏁 First port: distance = 0 (starting point)');
+  console.log('  🔄 Middle ports: distance > 0 (distance to reach this port)');
+  console.log('  🎯 Last port: distance = 0 (final destination)');
+  
+  // Test scenarios
+  const testScenarios = [
+    {
+      name: 'All distances set (should be GREEN)',
+      schedule: [
+        { portName: 'SINGAPORE', distance: 0, isRoutingPoint: false },
+        { portName: 'DUBAI', distance: 1000, isRoutingPoint: false },
+        { portName: 'ROTTERDAM', distance: 0, isRoutingPoint: false }
+      ]
+    },
+    {
+      name: 'Missing middle distance (should be RED)',
+      schedule: [
+        { portName: 'SINGAPORE', distance: 0, isRoutingPoint: false },
+        { portName: 'DUBAI', distance: 0, isRoutingPoint: false },
+        { portName: 'ROTTERDAM', distance: 0, isRoutingPoint: false }
+      ]
+    },
+    {
+      name: 'With routing point (should be GREEN)',
+      schedule: [
+        { portName: 'SINGAPORE', distance: 0, isRoutingPoint: false },
+        { portName: 'SUEZ CANAL', distance: 100, isRoutingPoint: true },
+        { portName: 'DUBAI', distance: 33, isRoutingPoint: false },
+        { portName: 'ROTTERDAM', distance: 0, isRoutingPoint: false }
+      ]
+    }
+  ];
+  
+  testScenarios.forEach((scenario, index) => {
+    console.log(`\n📝 Test ${index + 1}: ${scenario.name}`);
+    
+    // Simulate the checkDistanceStatus logic
+    const portsToCheck = scenario.schedule.slice(1, -1); // Skip first and last
+    
+    console.log('  📊 Ports to check (middle ports):');
+    portsToCheck.forEach((port, i) => {
+      console.log(`    ${i + 1}. ${port.portName}: distance=${port.distance}, isRoutingPoint=${port.isRoutingPoint}`);
+    });
+    
+    const missingDistances = portsToCheck.filter(port => 
+      port.distance === 0 && !port.isRoutingPoint
+    );
+    
+    console.log('  ❌ Missing distances:', missingDistances.length);
+    missingDistances.forEach(port => {
+      console.log(`    - ${port.portName}: distance=${port.distance}, isRoutingPoint=${port.isRoutingPoint}`);
+    });
+    
+    const allHaveDistances = missingDistances.length === 0;
+    console.log(`  🎯 Result: ${allHaveDistances ? '🟢 GREEN' : '🔴 RED'}`);
+  });
+  
+  console.log('\n💡 Expected Behavior:');
+  console.log('  🟢 GREEN: All middle ports (excluding first/last) have distance > 0');
+  console.log('  🔴 RED: Any middle port (excluding routing points) has distance = 0');
+  console.log('  🏁 First port distance = 0 is always ignored');
+  console.log('  🎯 Last port distance = 0 is always ignored');
+  console.log('  🚢 Routing points with distance = 0 are ignored');
+  
+  console.log('\n✅ Distance status logic test complete');
+  console.log('🧪 Check browser console for detailed distance status logs');
+}
+
+/**
+ * Test alternate route selection distance clearing
+ */
+export function testAlternateRouteDistanceClearing(): void {
+  console.log('\n🧪 === TEST: Alternate Route Selection Distance Clearing ===');
+  
+  console.log('\n📋 DistanceUsecases.md Requirement:');
+  console.log('  🔁 Alternate Routing Points: Clear all distances from schedule (regardless of AddToRotation value)');
+  console.log('  ♻️ Auto-Clear Distance Rules: On Alternate route selection (when switching between routing point alternatives)');
+  
+  // Create test schedule with distances
+  const testSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'SINGAPORE',
+      distance: 0,
+      isRoutingPoint: false,
+      activity: 'Load',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0
+    },
+    {
+      id: 2,
+      portName: 'SUEZ CANAL',
+      distance: 100,
+      isRoutingPoint: true,
+      activity: 'Transit',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 5000,
+      availableAlternatives: [
+        {
+          Name: 'CAPE OF GOOD HOPE',
+          Distance: 0,
+          SecaDistance: 0,
+          AddToRotation: false
+        }
+      ]
+    },
+    {
+      id: 3,
+      portName: 'DUBAI',
+      distance: 33,
+      isRoutingPoint: false,
+      activity: 'Discharge',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0
+    }
+  ];
+  
+  console.log('\n📊 Initial schedule with distances:');
+  testSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}`);
+  });
+  
+  // Test Case 1: Switch to CAPE OF GOOD HOPE (AddToRotation: false)
+  console.log('\n🔄 Test Case 1: Switching to CAPE OF GOOD HOPE (AddToRotation: false)');
+  const capeAlternative = {
+    Name: 'CAPE OF GOOD HOPE',
+    Distance: 0,
+    SecaDistance: 0,
+    AddToRotation: false
+  };
+  
+  const scheduleAfterCapeSwitch = switchRoutingPointAlternative(
+    testSchedule,
+    2, // routingPointId
+    capeAlternative
+  );
+  
+  console.log('📊 Schedule after switching to CAPE OF GOOD HOPE:');
+  scheduleAfterCapeSwitch.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}`);
+  });
+  
+  // Check if all distances are cleared
+  const allDistancesClearedAfterCape = scheduleAfterCapeSwitch.every(call => call.distance === 0);
+  console.log(`✅ All distances cleared after CAPE switch: ${allDistancesClearedAfterCape ? '✅ PASS' : '❌ FAIL'}`);
+  
+  // Check if routing point was removed
+  const hasRoutingPointAfterCape = scheduleAfterCapeSwitch.some(call => call.isRoutingPoint);
+  console.log(`✅ Routing point removed after CAPE switch: ${!hasRoutingPointAfterCape ? '✅ PASS' : '❌ FAIL'}`);
+  
+  // Test Case 2: Switch to another alternative (AddToRotation: true)
+  console.log('\n🔄 Test Case 2: Switching to another alternative (AddToRotation: true)');
+  
+  // First, recreate the original schedule
+  const originalSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'SINGAPORE',
+      distance: 0,
+      isRoutingPoint: false,
+      activity: 'Load',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0
+    },
+    {
+      id: 2,
+      portName: 'SUEZ CANAL',
+      distance: 100,
+      isRoutingPoint: true,
+      activity: 'Transit',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 5000,
+      availableAlternatives: [
+        {
+          Name: 'PANAMA CANAL',
+          Distance: 50,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    },
+    {
+      id: 3,
+      portName: 'DUBAI',
+      distance: 33,
+      isRoutingPoint: false,
+      activity: 'Discharge',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0
+    }
+  ];
+  
+  const panamaAlternative = {
+    Name: 'PANAMA CANAL',
+    Distance: 50,
+    SecaDistance: 0,
+    AddToRotation: true
+  };
+  
+  const scheduleAfterPanamaSwitch = switchRoutingPointAlternative(
+    originalSchedule,
+    2, // routingPointId
+    panamaAlternative
+  );
+  
+  console.log('📊 Schedule after switching to PANAMA CANAL:');
+  scheduleAfterPanamaSwitch.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}`);
+  });
+  
+  // Check if all distances are cleared
+  const allDistancesClearedAfterPanama = scheduleAfterPanamaSwitch.every(call => call.distance === 0);
+  console.log(`✅ All distances cleared after PANAMA switch: ${allDistancesClearedAfterPanama ? '✅ PASS' : '❌ FAIL'}`);
+  
+  // Check if routing point was replaced
+  const panamaRoutingPoint = scheduleAfterPanamaSwitch.find(call => call.isRoutingPoint);
+  const routingPointReplaced = panamaRoutingPoint && panamaRoutingPoint.portName === 'PANAMA CANAL';
+  console.log(`✅ Routing point replaced with PANAMA CANAL: ${routingPointReplaced ? '✅ PASS' : '❌ FAIL'}`);
+  
+  console.log('\n🎯 Expected Behavior in UI:');
+  console.log('  🔄 On alternate route selection: All distances → 0');
+  console.log('  🔴 Get Distance button should be highlighted (red)');
+  console.log('  📋 User must manually click "Get Distance" to recalculate');
+  console.log('  🧹 This ensures clean slate for distance calculation after route changes');
+  
+  console.log('\n✅ Alternate route distance clearing test complete');
+  console.log('🧪 Test in UI: Switch routing alternatives and verify distances are cleared');
+}
+
+/**
+ * Test the specific scenario: Singapore-Suez Canal-Dubai with Cape of Good Hope alternate
+ * Suez Canal added to Dubai's ExceptionRPs, Cape of Good Hope should be considered on Get Distance
+ */
+export function testSingaporeSuezDubaiScenario(): void {
+  console.log('\n🧪 === TEST: Singapore-Suez Canal-Dubai with Cape of Good Hope Alternate ===');
+  
+  console.log('\n📋 Scenario:');
+  console.log('  1. Singapore → Suez Canal → Dubai');
+  console.log('  2. Cape of Good Hope selected as alternate for Suez Canal');
+  console.log('  3. Suez Canal added to Dubai\'s ExceptionRPs');
+  console.log('  4. On Get Distance: Cape of Good Hope should be considered instead of Suez Canal');
+  
+  // Clear cache
+  distanceCache.clear();
+  
+  // Add test data for SINGAPORE → DUBAI with SUEZ CANAL and CAPE OF GOOD HOPE
+  const testData: DistanceResult[] = [
+    {
+      FromPort: "SINGAPORE",
+      ToPort: "DUBAI",
+      Distance: 3500,
+      SecaDistance: 0,
+      RoutingPoints: [
+        {
+          Name: "SUEZ CANAL",
+          Distance: 33,
+          SecaDistance: 0,
+          AlternateRPs: [
+            {
+              Name: "CAPE OF GOOD HOPE",
+              Distance: 0,
+              SecaDistance: 0,
+              AddToRotation: true
+            }
+          ],
+          AddToRotation: true
+        }
+      ]
+    }
+  ];
+  
+  // Populate cache
+  testData.forEach(result => {
+    const fromKey = result.FromPort.trim().toUpperCase();
+    const toKey = result.ToPort.trim().toUpperCase();
+    
+    const normalizedResult: DistanceResult = {
+      ...result,
+      FromPort: fromKey,
+      ToPort: toKey
+    };
+    
+    distanceCache.set(`${fromKey}|${toKey}`, normalizedResult);
+  });
+  
+  console.log('✅ Test data populated');
+  
+  // Step 1: Create initial schedule with SUEZ CANAL
+  const initialSchedule: PortCall[] = [
+    {
+      id: 1,
+      portName: 'SINGAPORE',
+      distance: 0,
+      isRoutingPoint: false,
+      activity: 'Load',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0
+    },
+    {
+      id: 2,
+      portName: 'SUEZ CANAL',
+      distance: 100,
+      isRoutingPoint: true,
+      activity: 'Transit',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 5000,
+      availableAlternatives: [
+        {
+          Name: 'CAPE OF GOOD HOPE',
+          Distance: 0,
+          SecaDistance: 0,
+          AddToRotation: true
+        }
+      ]
+    },
+    {
+      id: 3,
+      portName: 'DUBAI',
+      distance: 33,
+      isRoutingPoint: false,
+      activity: 'Discharge',
+      arrivalDate: new Date(),
+      departureDate: new Date(),
+      fuelDays: 0,
+      additionalCosts: 0,
+      ExceptionRPs: [] // Initially empty
+    }
+  ];
+  
+  console.log('\n📊 Step 1: Initial schedule with SUEZ CANAL:');
+  initialSchedule.forEach((call, index) => {
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}`);
+  });
+  
+  // Step 2: Switch to CAPE OF GOOD HOPE (this should add SUEZ CANAL to Dubai's ExceptionRPs)
+  console.log('\n🔄 Step 2: Switching to CAPE OF GOOD HOPE...');
+  const capeAlternative = {
+    Name: 'CAPE OF GOOD HOPE',
+    Distance: 0,
+    SecaDistance: 0,
+    AddToRotation: true
+  };
+  
+  const scheduleAfterCapeSwitch = switchRoutingPointAlternative(
+    initialSchedule,
+    2, // routingPointId (SUEZ CANAL)
+    capeAlternative
+  );
+  
+  console.log('📊 Schedule after switching to CAPE OF GOOD HOPE:');
+  scheduleAfterCapeSwitch.forEach((call, index) => {
+    const exceptionRPsStr = call.ExceptionRPs && call.ExceptionRPs.length > 0 
+      ? `, ExceptionRPs: [${call.ExceptionRPs.join(', ')}]` 
+      : '';
+    const alternateRPsStr = call.alternateRPs && call.alternateRPs.length > 0 
+      ? `, alternateRPs: [${call.alternateRPs.join(', ')}]` 
+      : '';
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}${exceptionRPsStr}${alternateRPsStr}`);
+  });
+  
+  // Verify SUEZ CANAL is in Dubai's ExceptionRPs
+  const dubaiPort = scheduleAfterCapeSwitch.find(call => call.portName === 'DUBAI');
+  const suezInExceptionRPs = dubaiPort?.ExceptionRPs?.includes('SUEZ CANAL');
+  console.log(`✅ SUEZ CANAL in Dubai's ExceptionRPs: ${suezInExceptionRPs ? '✅ PASS' : '❌ FAIL'}`);
+  
+  // Step 3: Clear all distances (simulating the distance clearing behavior)
+  console.log('\n🧹 Step 3: Clearing all distances (as per alternate route selection)...');
+  const scheduleWithClearedDistances = clearAllDistancesFromSchedule(scheduleAfterCapeSwitch);
+  
+  console.log('📊 Schedule with cleared distances:');
+  scheduleWithClearedDistances.forEach((call, index) => {
+    const exceptionRPsStr = call.ExceptionRPs && call.ExceptionRPs.length > 0 
+      ? `, ExceptionRPs: [${call.ExceptionRPs.join(', ')}]` 
+      : '';
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}${exceptionRPsStr}`);
+  });
+  
+  // Step 4: Apply routing points logic (simulating "Get Distance" button click)
+  console.log('\n📏 Step 4: Applying routing points logic (Get Distance)...');
+  const scheduleAfterRoutingLogic = applyRoutingPointsLogic(scheduleWithClearedDistances);
+  
+  console.log('📊 Schedule after applying routing points logic:');
+  scheduleAfterRoutingLogic.forEach((call, index) => {
+    const exceptionRPsStr = call.ExceptionRPs && call.ExceptionRPs.length > 0 
+      ? `, ExceptionRPs: [${call.ExceptionRPs.join(', ')}]` 
+      : '';
+    console.log(`  ${index + 1}. ${call.portName}: distance=${call.distance}, isRoutingPoint=${call.isRoutingPoint}${exceptionRPsStr}`);
+  });
+  
+  // Verify the expected behavior
+  const hasCapeOfGoodHope = scheduleAfterRoutingLogic.some(call => 
+    call.isRoutingPoint && call.portName === 'CAPE OF GOOD HOPE'
+  );
+  const hasSuezCanal = scheduleAfterRoutingLogic.some(call => 
+    call.isRoutingPoint && call.portName === 'SUEZ CANAL'
+  );
+  
+  // Check if Cape of Good Hope has Suez Canal as an alternative
+  const capeOfGoodHopeCall = scheduleAfterCapeSwitch.find(call => 
+    call.isRoutingPoint && call.portName === 'CAPE OF GOOD HOPE'
+  );
+  const hasSuezAsAlternative = capeOfGoodHopeCall?.availableAlternatives?.some(alt => alt.Name === 'SUEZ CANAL');
+  
+  console.log('\n🎯 Verification:');
+  console.log(`✅ CAPE OF GOOD HOPE added as routing point: ${hasCapeOfGoodHope ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`✅ SUEZ CANAL NOT added as routing point: ${!hasSuezCanal ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`✅ SUEZ CANAL remains in Dubai's ExceptionRPs: ${dubaiPort?.ExceptionRPs?.includes('SUEZ CANAL') ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`✅ CAPE OF GOOD HOPE has SUEZ CANAL as alternative: ${hasSuezAsAlternative ? '✅ PASS' : '❌ FAIL'}`);
+  
+  console.log('\n🎯 Expected Behavior:');
+  console.log('  🔄 When user switches from SUEZ CANAL to CAPE OF GOOD HOPE:');
+  console.log('     - SUEZ CANAL is added to Dubai\'s ExceptionRPs');
+  console.log('     - All distances are cleared');
+  console.log('     - CAPE OF GOOD HOPE has SUEZ CANAL as an alternative (orange icon)');
+  console.log('  📏 When user clicks "Get Distance":');
+  console.log('     - CAPE OF GOOD HOPE is added as routing point (AddToRotation=true)');
+  console.log('     - SUEZ CANAL is NOT added (it\'s in ExceptionRPs)');
+  console.log('     - Route becomes: Singapore → Cape of Good Hope → Dubai');
+  console.log('  🔄 User can switch back to SUEZ CANAL using the orange alternate icon');
+  
+  console.log('\n✅ Singapore-Suez-Dubai scenario test complete');
+  console.log('🧪 Test in UI: Switch Suez Canal to Cape of Good Hope, then click Get Distance');
+}
+

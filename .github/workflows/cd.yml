@@ -1,0 +1,438 @@
+name: CD Pipeline - Shipnet 2.0
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline - Shipnet 2.0"]
+    types:
+      - completed
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        default: 'local'
+        type: choice
+        options:
+        - local
+        - staging
+        - production
+      skip_tests:
+        description: 'Skip tests before deployment'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20.x'
+  NX_CONSOLE_NO_INSTALL_PROMPT: 'true'
+  NX_REJECT_UNKNOWN_LOCAL_CACHE: '0'
+  DEPLOYMENT_PATH: 'C:\ShipnetDeploy'
+  BACKEND_PORT: '7071'
+  FRONTEND_PORTS: '3000,3001,3002,3003,3004'
+
+jobs:
+  # Job 1: Pre-deployment Checks
+  pre-deployment:
+    name: Pre-deployment Checks
+    runs-on: self-hosted # Use self-hosted runner for local deployment
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    
+    outputs:
+      deploy-backend: ${{ steps.changes.outputs.backend }}
+      deploy-frontend: ${{ steps.changes.outputs.frontend }}
+      deployment-id: ${{ steps.deployment-id.outputs.id }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+        
+    - name: Generate deployment ID
+      id: deployment-id
+      run: |
+        $deployId = "deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$($env:GITHUB_SHA.Substring(0,7))"
+        echo "id=$deployId" >> $env:GITHUB_OUTPUT
+        echo "🚀 Deployment ID: $deployId"
+      shell: pwsh
+      
+    - name: Check for changes
+      id: changes
+      run: |
+        # Check if backend files changed
+        $backendChanged = git diff --name-only HEAD~1 HEAD | Select-String "^backend/" | Measure-Object | Select-Object -ExpandProperty Count
+        if ($backendChanged -gt 0 -or "${{ github.event_name }}" -eq "workflow_dispatch") {
+          echo "backend=true" >> $env:GITHUB_OUTPUT
+          echo "✅ Backend deployment needed"
+        } else {
+          echo "backend=false" >> $env:GITHUB_OUTPUT
+          echo "⏭️ Backend deployment skipped"
+        }
+        
+        # Check if frontend files changed
+        $frontendChanged = git diff --name-only HEAD~1 HEAD | Select-String "^frontend/" | Measure-Object | Select-Object -ExpandProperty Count
+        if ($frontendChanged -gt 0 -or "${{ github.event_name }}" -eq "workflow_dispatch") {
+          echo "frontend=true" >> $env:GITHUB_OUTPUT
+          echo "✅ Frontend deployment needed"
+        } else {
+          echo "frontend=false" >> $env:GITHUB_OUTPUT
+          echo "⏭️ Frontend deployment skipped"
+        }
+      shell: pwsh
+      
+    - name: Create deployment directory
+      run: |
+        $deployPath = "${{ env.DEPLOYMENT_PATH }}\${{ steps.deployment-id.outputs.id }}"
+        if (!(Test-Path $deployPath)) {
+          New-Item -ItemType Directory -Path $deployPath -Force
+          echo "📁 Created deployment directory: $deployPath"
+        }
+      shell: pwsh
+
+  # Job 2: Deploy Backend (.NET Functions)
+  deploy-backend:
+    name: Deploy Backend to Local
+    runs-on: self-hosted
+    needs: pre-deployment
+    if: needs.pre-deployment.outputs.deploy-backend == 'true'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Stop existing backend services
+      run: |
+        # Stop any running func.exe processes
+        Get-Process -Name "func" -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-Process -Name "dotnet" -ErrorAction SilentlyContinue | Where-Object {$_.ProcessName -like "*ShipnetFunctionApp*"} | Stop-Process -Force
+        Start-Sleep -Seconds 5
+      shell: pwsh
+      continue-on-error: true
+      
+    - name: Build backend for production
+      run: |
+        dotnet restore
+        dotnet build --configuration Release --no-restore
+        dotnet publish --configuration Release --output "${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}\backend" --no-build
+      working-directory: ./backend/ShipnetFunctionApp
+      shell: pwsh
+      
+    - name: Copy configuration files
+      run: |
+        $deployPath = "${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}\backend"
+        Copy-Item "backend/ShipnetFunctionApp/host.json" -Destination $deployPath -Force
+        Copy-Item "backend/ShipnetFunctionApp/local.settings.json" -Destination $deployPath -Force -ErrorAction SilentlyContinue
+        echo "📄 Configuration files copied"
+      shell: pwsh
+      
+    - name: Install Azure Functions Core Tools (if not installed)
+      run: |
+        try {
+          func --version
+          echo "✅ Azure Functions Core Tools already installed"
+        } catch {
+          echo "📦 Installing Azure Functions Core Tools..."
+          npm install -g azure-functions-core-tools@4 --unsafe-perm true
+        }
+      shell: pwsh
+      continue-on-error: true
+      
+    - name: Start backend service
+      run: |
+        $deployPath = "${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}\backend"
+        cd $deployPath
+        Start-Process -FilePath "func" -ArgumentList "start", "--port", "${{ env.BACKEND_PORT }}" -WindowStyle Hidden
+        Start-Sleep -Seconds 10
+        echo "🚀 Backend started on port ${{ env.BACKEND_PORT }}"
+      shell: pwsh
+      
+    - name: Health check backend
+      run: |
+        $maxAttempts = 10
+        $attempt = 1
+        
+        do {
+          try {
+            $response = Invoke-RestMethod -Uri "http://localhost:${{ env.BACKEND_PORT }}/api/health" -Method Get -TimeoutSec 5
+            echo "✅ Backend health check passed"
+            break
+          } catch {
+            echo "⏳ Attempt $attempt/$maxAttempts - Backend not ready yet..."
+            Start-Sleep -Seconds 5
+            $attempt++
+          }
+        } while ($attempt -le $maxAttempts)
+        
+        if ($attempt -gt $maxAttempts) {
+          echo "❌ Backend health check failed after $maxAttempts attempts"
+          exit 1
+        }
+      shell: pwsh
+
+  # Job 3: Deploy Frontend (Next.js Apps)
+  deploy-frontend:
+    name: Deploy Frontend to Local
+    runs-on: self-hosted
+    needs: pre-deployment
+    if: needs.pre-deployment.outputs.deploy-frontend == 'true'
+    
+    strategy:
+      matrix:
+        app: [chartering, registers, home, accounting, voyagemanager, auth]
+        include:
+          - app: chartering
+            port: 3000
+          - app: registers  
+            port: 3001
+          - app: home
+            port: 3002
+          - app: accounting
+            port: 3003
+          - app: voyagemanager
+            port: 3004
+          - app: auth
+            port: 3005
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: |
+          package-lock.json
+          frontend/package-lock.json
+        
+    - name: Stop existing ${{ matrix.app }} service
+      run: |
+        # Find and stop Node processes running on the specific port
+        $processes = Get-NetTCPConnection -LocalPort ${{ matrix.port }} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess
+        foreach ($processId in $processes) {
+          if ($processId) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+            echo "🛑 Stopped process $processId on port ${{ matrix.port }}"
+          }
+        }
+        Start-Sleep -Seconds 3
+      shell: pwsh
+      continue-on-error: true
+      
+    - name: Install dependencies
+      run: |
+        # Install root dependencies
+        npm ci
+        # Install frontend workspace dependencies
+        cd frontend
+        npm ci
+      shell: pwsh
+      
+    - name: Build ${{ matrix.app }} for production
+      run: |
+        $env:NODE_ENV = "production"
+        $env:NX_CONSOLE_NO_INSTALL_PROMPT = "true"
+        # Build using Nx
+        npx nx build ${{ matrix.app }} --configuration=production
+      working-directory: ./frontend
+      shell: pwsh
+      
+    - name: Deploy ${{ matrix.app }} app
+      run: |
+        $deployPath = "${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}\frontend\${{ matrix.app }}"
+        New-Item -ItemType Directory -Path $deployPath -Force
+        
+        # Copy built application (handle different build outputs)
+        $buildPaths = @(
+          "frontend\apps\${{ matrix.app }}\.next",
+          "frontend\apps\${{ matrix.app }}\out", 
+          "frontend\apps\${{ matrix.app }}\dist",
+          "frontend\dist\apps\${{ matrix.app }}"
+        )
+        
+        $copied = $false
+        foreach ($buildPath in $buildPaths) {
+          if (Test-Path $buildPath) {
+            Copy-Item -Path "$buildPath\*" -Destination $deployPath -Recurse -Force
+            $copied = $true
+            echo "📦 Copied from $buildPath"
+            break
+          }
+        }
+        
+        if (-not $copied) {
+          echo "⚠️ No build output found for ${{ matrix.app }}"
+        }
+        
+        # Copy essential files
+        Copy-Item -Path "frontend\apps\${{ matrix.app }}\package.json" -Destination $deployPath -Force -ErrorAction SilentlyContinue
+        Copy-Item -Path "frontend\apps\${{ matrix.app }}\next.config.*" -Destination $deployPath -Force -ErrorAction SilentlyContinue
+        
+        echo "📦 ${{ matrix.app }} app deployed to $deployPath"
+      shell: pwsh
+      
+    - name: Start ${{ matrix.app }} service
+      run: |
+        $deployPath = "${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}\frontend\${{ matrix.app }}"
+        cd $deployPath
+        
+        # Start the Next.js application
+        $env:NODE_ENV = "production"
+        $env:PORT = "${{ matrix.port }}"
+        Start-Process -FilePath "npm" -ArgumentList "start" -WindowStyle Hidden -WorkingDirectory $deployPath
+        
+        Start-Sleep -Seconds 15
+        echo "🚀 ${{ matrix.app }} started on port ${{ matrix.port }}"
+      shell: pwsh
+      
+    - name: Health check ${{ matrix.app }}
+      run: |
+        $maxAttempts = 8
+        $attempt = 1
+        
+        do {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:${{ matrix.port }}" -Method Get -TimeoutSec 10
+            if ($response.StatusCode -eq 200) {
+              echo "✅ ${{ matrix.app }} health check passed"
+              break
+            }
+          } catch {
+            echo "⏳ Attempt $attempt/$maxAttempts - ${{ matrix.app }} not ready yet..."
+            Start-Sleep -Seconds 8
+            $attempt++
+          }
+        } while ($attempt -le $maxAttempts)
+        
+        if ($attempt -gt $maxAttempts) {
+          echo "❌ ${{ matrix.app }} health check failed"
+          exit 1
+        }
+      shell: pwsh
+
+  # Job 4: Post-deployment Tests
+  post-deployment-tests:
+    name: Post-deployment Validation
+    runs-on: self-hosted
+    needs: [pre-deployment, deploy-backend, deploy-frontend]
+    if: always() && !inputs.skip_tests
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js for testing
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Install test dependencies
+      run: |
+        cd frontend/testing
+        npm ci
+      shell: pwsh
+      
+    - name: Run smoke tests
+      run: |
+        echo "🧪 Running smoke tests..."
+        
+        # Test backend endpoints
+        try {
+          $backendResponse = Invoke-RestMethod -Uri "http://localhost:${{ env.BACKEND_PORT }}/api/ports/GetPorts" -Method Get -TimeoutSec 10
+          echo "✅ Backend smoke test passed"
+        } catch {
+          echo "❌ Backend smoke test failed: $_"
+        }
+        
+        # Test frontend applications
+        $ports = @(3000, 3001, 3002, 3003)
+        $apps = @("operations", "registers", "home", "accounting")
+        
+        for ($i = 0; $i -lt $ports.Length; $i++) {
+          try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$($ports[$i])" -Method Get -TimeoutSec 10
+            if ($response.StatusCode -eq 200) {
+              echo "✅ $($apps[$i]) smoke test passed"
+            }
+          } catch {
+            echo "❌ $($apps[$i]) smoke test failed: $_"
+          }
+        }
+      shell: pwsh
+      continue-on-error: true
+      
+    - name: Run E2E tests (optional)
+      run: |
+        cd frontend/testing
+        npm run test:e2e -- --headless
+      shell: pwsh
+      continue-on-error: true
+
+  # Job 5: Deployment Summary and Cleanup
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: self-hosted
+    needs: [pre-deployment, deploy-backend, deploy-frontend, post-deployment-tests]
+    if: always()
+    
+    steps:
+    - name: Generate deployment summary
+      run: |
+        echo "# 🚀 Shipnet 2.0 Deployment Summary" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "**Deployment ID:** ${{ needs.pre-deployment.outputs.deployment-id }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "**Deployment Time:** $(Get-Date)" >> $env:GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "## Services Status" >> $env:GITHUB_STEP_SUMMARY
+        echo "- Backend (.NET Functions): ${{ needs.deploy-backend.result }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "- Frontend (Next.js Apps): ${{ needs.deploy-frontend.result }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "- Post-deployment Tests: ${{ needs.post-deployment-tests.result }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "## Access URLs" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Backend API:** http://localhost:${{ env.BACKEND_PORT }}" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Chartering App:** http://localhost:3000" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Registers App:** http://localhost:3001" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Home App:** http://localhost:3002" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Accounting App:** http://localhost:3003" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Voyage Manager App:** http://localhost:3004" >> $env:GITHUB_STEP_SUMMARY
+        echo "- **Auth App:** http://localhost:3005" >> $env:GITHUB_STEP_SUMMARY
+        echo "" >> $env:GITHUB_STEP_SUMMARY
+        echo "**Deployment Path:** ${{ env.DEPLOYMENT_PATH }}\${{ needs.pre-deployment.outputs.deployment-id }}" >> $env:GITHUB_STEP_SUMMARY
+      shell: pwsh
+      
+    - name: Cleanup old deployments
+      run: |
+        echo "🧹 Cleaning up old deployments..."
+        $deployments = Get-ChildItem "${{ env.DEPLOYMENT_PATH }}" -Directory | Where-Object {$_.Name -like "deploy-*"} | Sort-Object CreationTime -Descending
+        
+        # Keep latest 5 deployments
+        if ($deployments.Count -gt 5) {
+          $deploymentsToRemove = $deployments | Select-Object -Skip 5
+          foreach ($deployment in $deploymentsToRemove) {
+            Remove-Item $deployment.FullName -Recurse -Force
+            echo "🗑️ Removed old deployment: $($deployment.Name)"
+          }
+        }
+      shell: pwsh
+      continue-on-error: true
+      
+    - name: Final status
+      run: |
+        if ("${{ needs.deploy-backend.result }}" -eq "success" -and "${{ needs.deploy-frontend.result }}" -eq "success") {
+          echo "🎉 Deployment completed successfully!"
+          echo "All services are running and accessible."
+        } else {
+          echo "⚠️ Deployment completed with some issues."
+          echo "Please check the logs above for details."
+        }
+      shell: pwsh

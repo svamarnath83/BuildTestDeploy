@@ -1,0 +1,68 @@
+<testsuites id="" name="" tests="12" failures="0" skipped="12" errors="0" time="0.269827">
+<testsuite name="create-estimate.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create estimate with dynamic test data" classname="create-estimate.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="setup-verification.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="chromium" tests="2" failures="0" skipped="2" time="0" errors="0">
+<testcase name="Playwright MCP Setup Verification › should verify basic page functionality" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Playwright MCP Setup Verification › should capture screenshot for visual verification" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="vessel-create.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="chromium" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create vessel with dynamic test data" classname="vessel-create.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="create-estimate.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create estimate with dynamic test data" classname="create-estimate.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="setup-verification.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="firefox" tests="2" failures="0" skipped="2" time="0" errors="0">
+<testcase name="Playwright MCP Setup Verification › should verify basic page functionality" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Playwright MCP Setup Verification › should capture screenshot for visual verification" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="vessel-create.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="firefox" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create vessel with dynamic test data" classname="vessel-create.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="create-estimate.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create estimate with dynamic test data" classname="create-estimate.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="setup-verification.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="webkit" tests="2" failures="0" skipped="2" time="0" errors="0">
+<testcase name="Playwright MCP Setup Verification › should verify basic page functionality" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Playwright MCP Setup Verification › should capture screenshot for visual verification" classname="setup-verification.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="vessel-create.spec.ts" timestamp="2025-08-27T16:50:50.216Z" hostname="webkit" tests="1" failures="0" skipped="1" time="0" errors="0">
+<testcase name="Create vessel with dynamic test data" classname="vessel-create.spec.ts" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+</testsuites>

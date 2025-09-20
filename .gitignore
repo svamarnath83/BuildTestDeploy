@@ -1,0 +1,19 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/backend/.vs
+/backend/ShipnetFunctionApp/.vs
+/backend/ShipnetFunctionApp/bin
+/backend/ShipnetFunctionApp/obj
+.vscode/
+/frontend/node_modules
+/backend/publish
+/backend/ShipnetFunctionApp/Properties/PublishProfiles
+/frontend/packages/ui/dist
+.next
+.nx
+.claude
+.env.local
+local.settings.json
+node_modules

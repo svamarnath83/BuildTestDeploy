@@ -1,0 +1,376 @@
+{
+  "config": {
+    "configFile": "D:\\Git\\Shipnet-2.0\\frontend\\testing\\playwright.config.ts",
+    "rootDir": "D:/Git/Shipnet-2.0/frontend/testing/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results/results.json"
+        }
+      ],
+      [
+        "junit",
+        {
+          "outputFile": "test-results/results.xml"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "D:/Git/Shipnet-2.0/frontend/testing/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/Git/Shipnet-2.0/frontend/testing/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/tests/e2e/**/*.spec.ts",
+          "**/tests/e2e/**/*.test.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "D:/Git/Shipnet-2.0/frontend/testing/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "D:/Git/Shipnet-2.0/frontend/testing/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/tests/e2e/**/*.spec.ts",
+          "**/tests/e2e/**/*.test.ts"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "D:/Git/Shipnet-2.0/frontend/testing/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "D:/Git/Shipnet-2.0/frontend/testing/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/tests/e2e/**/*.spec.ts",
+          "**/tests/e2e/**/*.test.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.0",
+    "workers": 4,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "create-estimate.spec.ts",
+      "file": "create-estimate.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Create estimate with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "73c64731afd97eea2550-324e7089509517077ead",
+          "file": "create-estimate.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "Create estimate with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "73c64731afd97eea2550-4d37fd4e663c792a26b8",
+          "file": "create-estimate.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "Create estimate with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "73c64731afd97eea2550-27d081f41153d0b9226d",
+          "file": "create-estimate.spec.ts",
+          "line": 4,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "setup-verification.spec.ts",
+      "file": "setup-verification.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Playwright MCP Setup Verification",
+          "file": "setup-verification.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should verify basic page functionality",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-2ba4ea2273bf95626445",
+              "file": "setup-verification.spec.ts",
+              "line": 4,
+              "column": 3
+            },
+            {
+              "title": "should capture screenshot for visual verification",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-78faf577ce86986ac71f",
+              "file": "setup-verification.spec.ts",
+              "line": 13,
+              "column": 3
+            },
+            {
+              "title": "should verify basic page functionality",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-5542ff474055cfd80674",
+              "file": "setup-verification.spec.ts",
+              "line": 4,
+              "column": 3
+            },
+            {
+              "title": "should capture screenshot for visual verification",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-e6f8ea6b5d4e00724eda",
+              "file": "setup-verification.spec.ts",
+              "line": 13,
+              "column": 3
+            },
+            {
+              "title": "should verify basic page functionality",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-396375df685e00a0b3c0",
+              "file": "setup-verification.spec.ts",
+              "line": 4,
+              "column": 3
+            },
+            {
+              "title": "should capture screenshot for visual verification",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "d3ae683f9066f919f969-f0b88ca9cd4551e38206",
+              "file": "setup-verification.spec.ts",
+              "line": 13,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "vessel-create.spec.ts",
+      "file": "vessel-create.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Create vessel with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "12bb0997c52b8cde8626-24bbd857c241691fab9e",
+          "file": "vessel-create.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "Create vessel with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "12bb0997c52b8cde8626-d49ddca6127ce08d5f60",
+          "file": "vessel-create.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "Create vessel with dynamic test data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "12bb0997c52b8cde8626-dcbd9fa850b5541780e5",
+          "file": "vessel-create.spec.ts",
+          "line": 4,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-08-27T16:50:49.947Z",
+    "duration": 269.827,
+    "expected": 0,
+    "skipped": 12,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
