@@ -67,7 +67,7 @@ jobs:
       continue-on-error: true
       
     - name: Upload backend artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: backend-build
         path: |
@@ -132,7 +132,7 @@ jobs:
       continue-on-error: true
       
     - name: Upload ${{ matrix.app }} build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: frontend-${{ matrix.app }}-build
         path: |
